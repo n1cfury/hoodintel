@@ -14,5 +14,5 @@ This is a refactor scaffold that breaks the original all-in-one script into a re
 
 ```bash
 python -m pip install -r requirements.txt
-python hoodintel.py "7978 Canton Dr, Lemon Grove, CA 91945" --json-out out.json
+python hoodintel.py "Full address" --json-out out.json
 ```
