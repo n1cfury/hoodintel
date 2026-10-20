@@ -134,7 +134,7 @@ mode, and it prints cleanly (use the browser's Print → Save as PDF if you need
 
 - **Every lookup after geocoding is optional.** A failed source becomes a warning in the report, and the
   rest still renders.
-- **Nearby POIs** (hospital, urgent care, veterinary clinic, gas station): Nominatim is searched in a
+- **Nearby POIs** (hospital, urgent care, fire station, veterinary clinic, grocery store, school, gas station): Nominatim is searched in a
   2 km box around the address, widening to 8 and 25 km only when needed. Distances are straight-line.
 - **Zillow cache:** Zillow publishes ZHVI as one ~120 MB CSV for every ZIP. It's downloaded the first
   time it's needed (about 20 s), reduced to a ~2 MB per-ZIP file, and refreshed after 30 days. The web

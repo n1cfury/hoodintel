@@ -65,7 +65,28 @@ POI_CATEGORIES = [
     POICategory(
         "Closest Veterinary Clinic", "[amenity=veterinary]", ["[amenity=veterinary]"], lambda t: t.get("amenity") == "veterinary"
     ),
+    POICategory(
+        "Closest Fire Station", "[amenity=fire_station]", ["[amenity=fire_station]"], lambda t: t.get("amenity") == "fire_station"
+    ),
+    # Nominatim doesn't index shop=grocery as a searchable type, so it finds
+    # supermarkets only; the Overpass fallback also accepts smaller grocers.
+    POICategory(
+        "Closest Grocery Store",
+        "[shop=supermarket]",
+        ["[shop=supermarket]", "[shop=grocery]"],
+        lambda t: t.get("shop") in ("supermarket", "grocery"),
+    ),
+    POICategory("Closest School", "[amenity=school]", ["[amenity=school]"], lambda t: t.get("amenity") == "school"),
 ]
+
+
+def _describe(tags: dict[str, Any]) -> str | None:
+    """Short extra line for categories where the kind matters (schools)."""
+    if tags.get("amenity") != "school":
+        return None
+    parts = [str(tags["operator:type"]).capitalize() if tags.get("operator:type") else None,
+             f"grades {tags['grades']}" if tags.get("grades") else None]
+    return " · ".join(p for p in parts if p) or None
 
 
 def build_overpass_query(lat: float, lon: float, radius_m: int, selectors: list[str]) -> str:
@@ -134,6 +155,7 @@ def _to_poi(element: dict[str, Any], category: str, lat: float, lon: float) -> P
         phone=tags.get("phone") or tags.get("contact:phone"),
         website=tags.get("website") or tags.get("contact:website"),
         raw_tags=tags,
+        detail=_describe(tags),
     )
 
 

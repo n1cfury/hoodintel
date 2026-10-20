@@ -19,6 +19,10 @@ def build_executive_summary(report: ReportData) -> list[str]:
     if airport:
         summary.append(f"Closest regional/international airport: {airport.name}, roughly {airport.distance_miles} miles.")
 
+    fire = report.emergency_services.get("closest_fire_station")
+    if fire:
+        summary.append(f"Closest fire station identified at roughly {fire.distance_miles} miles.")
+
     gas_station = report.important_landmarks.get("closest_gas_station")
     if gas_station:
         summary.append(

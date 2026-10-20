@@ -74,12 +74,15 @@ def generate_report_data(
         ],
         subject=geocode,
         important_landmarks={
+            "closest_grocery_store": poi_results.get("Closest Grocery Store"),
+            "closest_school": poi_results.get("Closest School"),
             "closest_gas_station": poi_results.get("Closest Gas Station"),
             "closest_airport": closest_airport(geocode.latitude, geocode.longitude),
         },
         emergency_services={
             "closest_hospital": poi_results.get("Closest Hospital"),
             "closest_urgent_care": poi_results.get("Closest Urgent Care"),
+            "closest_fire_station": poi_results.get("Closest Fire Station"),
             "closest_veterinary_clinic": poi_results.get("Closest Veterinary Clinic"),
         },
         real_estate_metrics=real_estate,

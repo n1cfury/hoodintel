@@ -45,11 +45,15 @@ def sample_report(**overrides):
         important_landmarks={
             "closest_gas_station": poi("Closest Gas Station", "Fuel <b>Stop</b>", 0.4, website="javascript:alert(1)"),
             "closest_airport": airports.closest_airport(32.715736, -117.161087),
+            "closest_school": poi("Closest School", "Washington Elementary", 0.3,
+                                  raw_tags={"amenity": "school"}, detail="Public · grades K-5"),
+            "closest_grocery_store": None,
         },
         emergency_services={
             "closest_hospital": poi("Closest Hospital", "General Hospital", 1.25,
                                     phone="+1 555 0100", website="http://hospital.example"),
             "closest_urgent_care": None,
+            "closest_fire_station": poi("Closest Fire Station", "Station 1", 0.5),
             "closest_veterinary_clinic": poi("Closest Veterinary Clinic", "Vet", 2.0),
         },
         real_estate_metrics=RealEstateMetrics("U.S. Census ACS 2023 5-year", "92101",
@@ -76,6 +80,9 @@ class RenderTests(unittest.TestCase):
         self.assertIn("San Diego International Airport", html)
         self.assertIn("SAN · Large airport", html)
         self.assertNotIn("hardening", html.lower())
+        self.assertIn("Station 1", html)
+        self.assertIn("Public · grades K-5", html)
+        self.assertIn("Closest Grocery Store", html)            # None still gets a row
         self.assertIn("1.25 mi", html)
         self.assertIn("https://www.openstreetmap.org/node/42", html)
         self.assertIn('href="http://hospital.example"', html)
@@ -145,6 +152,14 @@ class CollectorTests(unittest.TestCase):
         poi = pois.nominatim_closest(session, pois.POI_CATEGORIES[0], self.LAT, self.LON, AppConfig())
         self.assertEqual(poi.name, "Mid")
         self.assertEqual(session.get.call_count, 2)
+
+    def test_school_detail_and_grocery_matcher(self):
+        el = {"type": "way", "id": 5, "center": {"lat": self.LAT, "lon": self.LON},
+              "tags": {"amenity": "school", "name": "High", "operator:type": "public", "grades": "9-12"}}
+        self.assertEqual(pois._to_poi(el, "Closest School", self.LAT, self.LON).detail, "Public · grades 9-12")
+        grocery = next(c for c in pois.POI_CATEGORIES if c.label == "Closest Grocery Store")
+        self.assertTrue(grocery.matches({"shop": "grocery"}))
+        self.assertFalse(grocery.matches({"shop": "convenience"}))
 
     def test_urgent_care_matcher(self):
         self.assertTrue(pois._is_urgent_care({"amenity": "clinic", "name": "AFC Urgent Care"}))
