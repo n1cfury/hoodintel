@@ -14,6 +14,8 @@ class GeocodeResult:
     city: str | None
     state: str | None
     county: str | None = None
+    source: str = "U.S. Census Geocoder"
+    precision: str | None = None  # set when the match is approximate
 
 
 @dataclass(slots=True)

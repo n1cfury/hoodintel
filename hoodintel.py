@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""HoodIntel: street address -> neighborhood OSINT report as standalone HTML.
+
+Usage:
+    python hoodintel.py "1234 Example St, San Diego, CA 92101"   # write an HTML report
+    python hoodintel.py --serve                                  # run the web UI
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,23 +16,38 @@ import requests
 from src.config import ReportOptions
 from src.exceptions import NeighborhoodReportError
 from src.pipeline import generate_report_data
+from src.renderers.html import write_report
 from src.renderers.json_export import write_json
-from src.renderers.pdf_reportlab import build_pdf
 from src.utils import derive_default_output_path
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate a neighborhood OSINT PDF report from a street address.")
-    parser.add_argument("address", help='Street address to investigate, e.g. "5452 Adobe Falls Rd #3, San Diego, CA 92120"')
-    parser.add_argument("--output", default=None, help="Output PDF path (default: derived from address)")
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate a neighborhood OSINT HTML report from a street address.")
+    parser.add_argument("address", nargs="?", help='Street address to investigate, e.g. "1234 Example St, San Diego, CA 92101"')
+    parser.add_argument("--output", default=None, help="Output HTML path (default: derived from address)")
     parser.add_argument("--json-out", default=None, help="Optional path to write raw JSON results")
     parser.add_argument("--acs-year", type=int, default=2023, help="Census ACS year to use (default: 2023)")
-    parser.add_argument("--debug", action="store_true", help="Print extra progress and include debug snapshot in JSON/PDF")
-    return parser.parse_args()
+    parser.add_argument("--debug", action="store_true", help="Include a debug snapshot in the JSON/HTML report")
+    web = parser.add_argument_group("web UI")
+    web.add_argument("--serve", action="store_true", help="Run the browser UI instead of writing a report")
+    web.add_argument("--host", default="127.0.0.1", help="Address to listen on (default: 127.0.0.1)")
+    web.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    args = parser.parse_args(argv)
+    if not args.serve and not args.address:
+        parser.error("an address is required (or use --serve)")
+    return args
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    if args.serve:
+        from src.web import serve
+
+        print(f"[+] HoodIntel web UI on http://{args.host}:{args.port}/  (Ctrl+C to stop)")
+        serve(host=args.host, port=args.port)
+        return 0
+
     output_path = Path(args.output).expanduser().resolve() if args.output else derive_default_output_path(args.address).resolve()
     options = ReportOptions(
         debug=args.debug,
@@ -38,8 +59,8 @@ def main() -> int:
 
     try:
         report = generate_report_data(args.address, options=options)
-        build_pdf(report, output_path, include_debug_snapshot=options.include_debug_snapshot)
-        print(f"[+] Wrote PDF: {output_path}")
+        write_report(report, output_path)
+        print(f"[+] Wrote HTML: {output_path}")
         if options.json_output_path:
             write_json(report, options.json_output_path)
             print(f"[+] Wrote JSON: {options.json_output_path}")

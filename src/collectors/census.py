@@ -22,8 +22,16 @@ def get_real_estate_metrics(
     if API_KEYS.get("CENSUS_API_KEY"):
         params["key"] = API_KEYS["CENSUS_API_KEY"]
 
-    response = session.get(url, params=params, timeout=config.default_timeout)
+    # A missing or bad key is a redirect to an HTML page, not an HTTP error.
+    response = session.get(url, params=params, timeout=config.default_timeout, allow_redirects=False)
+    if response.is_redirect and "key" in response.headers.get("Location", ""):
+        raise NeighborhoodReportError(
+            "Census ACS needs an API key: set CENSUS_API_KEY "
+            "(free at https://api.census.gov/data/key_signup.html)."
+        )
     response.raise_for_status()
+    if response.status_code == 204 or not response.content:
+        raise NeighborhoodReportError(f"No ACS housing data returned for ZIP/ZCTA {zip_code}")
     data = response.json()
     if not isinstance(data, list) or len(data) < 2:
         raise NeighborhoodReportError(f"No ACS housing data returned for ZIP/ZCTA {zip_code}")

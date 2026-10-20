@@ -1,0 +1,18 @@
+# Generated reports: runtime output, never committed.
+*.html
+!src/templates/*.html
+*.json
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local env / secrets (API keys)
+.env
+
+# Local editor/agent config
+.claude/

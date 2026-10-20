@@ -7,12 +7,12 @@ import requests
 
 from .analysis.hardening import build_basic_hardening_plan, build_basic_operating_rules
 from .analysis.summarizer import build_executive_summary
-from .config import AppConfig, POI_QUERIES, ReportOptions
+from .config import AppConfig, ReportOptions
 from .exceptions import NeighborhoodReportError
 from .models import LookupWarning, ReportData
 from .collectors.census import get_real_estate_metrics
 from .collectors.geocode import geocode_address
-from .collectors.pois import query_overpass_closest
+from .collectors.pois import find_closest_pois
 from .http import make_session
 
 
@@ -29,21 +29,15 @@ def generate_report_data(
 
     geocode = geocode_address(session, address, config)
 
-    poi_results = {}
     warnings: list[LookupWarning] = []
-    for label, selectors in POI_QUERIES.items():
-        try:
-            poi_results[label] = query_overpass_closest(
-                session,
-                lat=geocode.latitude,
-                lon=geocode.longitude,
-                category=label,
-                selectors=selectors,
-                config=config,
-            )
-        except requests.RequestException as exc:
-            warnings.append(LookupWarning(source=label, message=str(exc)))
-            poi_results[label] = None
+    if geocode.source != "U.S. Census Geocoder":
+        note = f", {geocode.precision}" if geocode.precision else ""
+        warnings.append(LookupWarning(source="Geocoder", message=f"No Census match; location from {geocode.source}{note}."))
+
+    poi_results, poi_errors = find_closest_pois(
+        session, lat=geocode.latitude, lon=geocode.longitude, config=config
+    )
+    warnings.extend(LookupWarning(source="OpenStreetMap", message=msg) for msg in poi_errors)
 
     real_estate = None
     if geocode.zip_code:
@@ -57,9 +51,9 @@ def generate_report_data(
     report = ReportData(
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         sources=[
-            "U.S. Census Geocoder",
+            geocode.source,
             f"U.S. Census ACS {options.acs_year} 5-year",
-            "OpenStreetMap / Overpass API",
+            "OpenStreetMap (Nominatim, Overpass API)",
         ],
         subject=geocode,
         important_landmarks={
