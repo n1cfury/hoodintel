@@ -17,9 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import hoodintel  # noqa: E402
 from src import web  # noqa: E402
 from src.exceptions import NeighborhoodReportError  # noqa: E402
-from src.models import GeocodeResult, LookupWarning, POIResult, RealEstateMetrics, ReportData  # noqa: E402
+from src.models import (Elevation, GeocodeResult, HomeValueIndex, LookupWarning, POIResult,  # noqa: E402
+                        RealEstateMetrics, ReportData)
 from src import http as hood_http  # noqa: E402
-from src.collectors import census, geocode, pois  # noqa: E402
+from src.collectors import airports, census, elevation, geocode, pois, zillow  # noqa: E402
 from src.config import AppConfig  # noqa: E402
 from src.renderers.html import _safe_url, render_report  # noqa: E402
 
@@ -41,8 +42,10 @@ def sample_report(**overrides):
         sources=["U.S. Census Geocoder", "OpenStreetMap / Overpass API"],
         subject=GeocodeResult(ADDRESS, "1234 EXAMPLE ST, SAN DIEGO, CA, 92101",
                               32.715736, -117.161087, "92101", "SAN DIEGO", "CA"),
-        important_landmarks={"closest_gas_station": poi("Closest Gas Station", "Fuel <b>Stop</b>", 0.4,
-                                                        website="javascript:alert(1)")},
+        important_landmarks={
+            "closest_gas_station": poi("Closest Gas Station", "Fuel <b>Stop</b>", 0.4, website="javascript:alert(1)"),
+            "closest_airport": airports.closest_airport(32.715736, -117.161087),
+        },
         emergency_services={
             "closest_hospital": poi("Closest Hospital", "General Hospital", 1.25,
                                     phone="+1 555 0100", website="http://hospital.example"),
@@ -50,7 +53,9 @@ def sample_report(**overrides):
             "closest_veterinary_clinic": poi("Closest Veterinary Clinic", "Vet", 2.0),
         },
         real_estate_metrics=RealEstateMetrics("U.S. Census ACS 2023 5-year", "92101",
-                                              "ZCTA5 92101", 750000, "Median value note."),
+                                              "ZCTA5 92101", 750000, "Median value note.", 812345),
+        home_value_index=HomeValueIndex("Zillow ZHVI", "92101", "San Diego, CA", 707705, "2026-09", 736961, -4.0),
+        elevation=Elevation(47.8, 14.6, "USGS"),
         executive_summary=["Target property: <script>x</script>."],
         warnings=[LookupWarning("Closest Urgent Care", "timeout")],
     )
@@ -64,6 +69,13 @@ class RenderTests(unittest.TestCase):
         html = render_report(sample_report())
         self.assertIn("1234 EXAMPLE ST, SAN DIEGO, CA, 92101", html)
         self.assertIn("$750,000", html)
+        self.assertIn("$812,345", html)                     # Census average
+        self.assertIn("$707,705", html)                     # Zillow typical value
+        self.assertIn("▼ -4.0%", html)
+        self.assertIn('class="flag good">48 ft above sea level', html)
+        self.assertIn("San Diego International Airport", html)
+        self.assertIn("SAN · Large airport", html)
+        self.assertNotIn("hardening", html.lower())
         self.assertIn("1.25 mi", html)
         self.assertIn("https://www.openstreetmap.org/node/42", html)
         self.assertIn('href="http://hospital.example"', html)
@@ -81,8 +93,12 @@ class RenderTests(unittest.TestCase):
         self.assertIn("form-action 'self'", html)
 
     def test_missing_metrics(self):
-        html = render_report(sample_report(real_estate_metrics=None))
+        html = render_report(sample_report(real_estate_metrics=None, home_value_index=None))
         self.assertIn("No real estate metrics available", html)
+
+    def test_below_sea_level_is_red(self):
+        html = render_report(sample_report(elevation=Elevation(-237.8, -72.5, "USGS")))
+        self.assertIn('class="flag bad">238 ft below sea level', html)
 
     def test_safe_url(self):
         self.assertEqual(_safe_url("https://a.example/x"), "https://a.example/x")
@@ -182,6 +198,59 @@ class CollectorTests(unittest.TestCase):
         session.get.return_value = resp(302, headers={"Location": "https://api.census.gov/data/missing_key.html"})
         with self.assertRaisesRegex(NeighborhoodReportError, "CENSUS_API_KEY"):
             census.get_real_estate_metrics(session, "92101", 2023)
+
+
+class NewSourceTests(unittest.TestCase):
+    def test_elevation(self):
+        session = mock.Mock()
+        session.get.return_value = resp(payload={"value": -237.76})
+        e = elevation.get_elevation(session, 33.25, -115.83)
+        self.assertEqual((e.feet, e.meters), (-237.8, -72.5))
+        session.get.return_value = resp(payload={"value": -1000000})
+        with self.assertRaises(NeighborhoodReportError):
+            elevation.get_elevation(session, 0, 0)
+
+    def test_closest_airport_skips_small_fields(self):
+        a = airports.closest_airport(34.47, -81.88)       # Clinton, SC: no commercial field in town
+        self.assertEqual(a.name, "Greenville-Spartanburg International Airport")
+        self.assertTrue(all(r["type"] in ("large_airport", "medium_airport") for r in airports.load_airports()))
+
+    def test_zillow_download_and_lookup(self):
+        months = [f"{y}-{m:02d}-28" for y in (2025, 2026) for m in range(1, 13)][:21]   # 2025-01 .. 2026-09
+        header = "RegionID,SizeRank,RegionName,RegionType,StateName,State,City,Metro,CountyName," + ",".join(months)
+        vals = [str(100000 + i * 1000) for i in range(len(months))]
+        rows = [header,
+                "1,1,92101,zip,CA,CA,San Diego,San Diego-Chula Vista-Carlsbad CA,San Diego County," + ",".join(vals),
+                "2,2,501,zip,NY,NY,Holtsville,,Suffolk County," + ",".join(vals[:-1] + [""])]
+        rows += [f"{i},{i},{10000 + i},zip,X,X,T,,C," + ",".join(vals) for i in range(3, 1100)]
+        stream = mock.MagicMock()
+        stream.__enter__.return_value = stream
+        stream.iter_lines.return_value = iter(rows)
+        session = mock.Mock()
+        session.get.return_value = stream
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict("os.environ", {"HOODINTEL_CACHE_DIR": d}):
+            hvi = zillow.get_home_value_index(session, "92101")
+            self.assertEqual((hvi.typical_home_value_usd, hvi.year_ago_value_usd, hvi.as_of), (120000, 108000, "2026-09"))
+            self.assertEqual(hvi.change_1y_pct, 11.1)
+            self.assertEqual(hvi.region, "San Diego, CA (San Diego-Chula Vista-Carlsbad CA)")
+            old = zillow.get_home_value_index(session, "00501")   # blank latest month: uses the newest value
+            self.assertEqual((old.as_of, old.typical_home_value_usd), ("2026-08", 119000))
+            with self.assertRaises(NeighborhoodReportError):
+                zillow.get_home_value_index(session, "99999")
+            self.assertEqual(session.get.call_count, 1)            # cached after the first download
+
+    def test_acs_average(self):
+        session = mock.Mock()
+        session.get.return_value = resp(payload=[
+            ["NAME", "B25077_001E", "B25082_001E", "B25081_001E", "zip code tabulation area"],
+            ["ZCTA5 92101", "750000", "8000000000", "10000", "92101"]])
+        m = census.get_real_estate_metrics(session, "92101", 2023)
+        self.assertEqual((m.median_owner_occupied_home_value_usd, m.mean_owner_occupied_home_value_usd), (750000, 800000))
+        session.get.return_value = resp(payload=[
+            ["NAME", "B25077_001E", "B25082_001E", "B25081_001E", "zip code tabulation area"],
+            ["ZCTA5 00000", "-666666666", "0", "0", "00000"]])
+        m = census.get_real_estate_metrics(session, "00000", 2023)
+        self.assertEqual((m.median_owner_occupied_home_value_usd, m.mean_owner_occupied_home_value_usd), (None, None))
 
 
 class CliTests(unittest.TestCase):

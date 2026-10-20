@@ -114,6 +114,7 @@ python hoodintel.py "1234 Example St, San Diego, CA 92101"
 | `--json-out PATH` | Also write the raw results as JSON |
 | `--acs-year YEAR` | Census ACS year (default: 2023) |
 | `--debug` | Include a debug snapshot in the report |
+| `--update-data` | Download or refresh the Zillow home value cache now, then exit |
 | `--serve` | Run the browser UI instead (`--host`, `--port`) |
 
 The HTML report is a single self-contained file: no scripts, no external requests, light and dark
@@ -126,12 +127,19 @@ mode, and it prints cleanly (use the browser's Print → Save as PDF if you need
 | U.S. Census Geocoder | Address → coordinates, city, state, ZIP, county |
 | OpenStreetMap Nominatim | Fallback geocoder for addresses Census doesn't have (common for rural and new addresses; flagged as approximate when not house-level). Primary source for nearby POIs |
 | OpenStreetMap Overpass API | Fallback POI source for categories Nominatim misses. Public servers are often at capacity, so it's tried second |
-| U.S. Census ACS 5-year | ZIP-level (ZCTA) median owner-occupied home value. Needs `CENSUS_API_KEY` |
+| USGS 3DEP Elevation Point Query Service | Ground elevation (ft and m) at the address. Green above sea level, red below |
+| OurAirports | Closest regional or international airport: U.S. large and medium airports with scheduled passenger service. Bundled as `src/data/us_airports.csv` (public domain); refresh with `python scripts/update_airports.py` |
+| Zillow Home Value Index (ZHVI) | ZIP-level typical home value (average value of mid-priced homes, the 35th–65th percentile) and its 1-year change |
+| U.S. Census ACS 5-year | ZIP-level (ZCTA) average and median owner-occupied home value. Needs `CENSUS_API_KEY` |
 
 - **Every lookup after geocoding is optional.** A failed source becomes a warning in the report, and the
   rest still renders.
 - **Nearby POIs** (hospital, urgent care, veterinary clinic, gas station): Nominatim is searched in a
   2 km box around the address, widening to 8 and 25 km only when needed. Distances are straight-line.
+- **Zillow cache:** Zillow publishes ZHVI as one ~120 MB CSV for every ZIP. It's downloaded the first
+  time it's needed (about 20 s), reduced to a ~2 MB per-ZIP file, and refreshed after 30 days. The web
+  UI downloads it in the background at startup. The cache lives in `$HOODINTEL_CACHE_DIR`, or
+  `~/.cache/hoodintel` by default. If a refresh fails, the old cache keeps being used.
 - **Usage policies:** Nominatim requests are spaced at least 1.1 s apart (shared across concurrent web
   requests), and Overpass is retried with backoff when busy. The web UI caches each report for an hour,
   so the download buttons don't repeat the lookups. These public services aren't meant for heavy

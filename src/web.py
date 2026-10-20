@@ -14,7 +14,9 @@ import requests
 from flask import Flask, Response, request
 
 from .config import ReportOptions
+from .collectors.zillow import ensure_zhvi_cache
 from .exceptions import NeighborhoodReportError
+from .http import make_session
 from .models import ReportData
 from .pipeline import generate_report_data
 from .renderers.html import env, render_report
@@ -107,7 +109,21 @@ def report() -> Response:
     return resp
 
 
+def warm_caches() -> None:
+    """Fetch the Zillow ZIP file in the background, so the first report
+    doesn't wait ~20 s for it. Failures are left for the report to surface."""
+
+    def run() -> None:
+        try:
+            ensure_zhvi_cache(make_session())
+        except Exception as exc:  # noqa: BLE001 - background best effort
+            app.logger.warning("Zillow cache warm-up failed: %s", exc)
+
+    threading.Thread(target=run, name="warm-caches", daemon=True).start()
+
+
 def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Development server. Use a WSGI server (e.g. gunicorn) for anything shared.
     Flask's debug mode is never enabled: its debugger allows code execution."""
+    warm_caches()
     app.run(host=host, port=port, debug=False, threaded=True)

@@ -28,18 +28,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--json-out", default=None, help="Optional path to write raw JSON results")
     parser.add_argument("--acs-year", type=int, default=2023, help="Census ACS year to use (default: 2023)")
     parser.add_argument("--debug", action="store_true", help="Include a debug snapshot in the JSON/HTML report")
+    parser.add_argument("--update-data", action="store_true",
+                        help="Download/refresh the Zillow home value cache now, then exit")
     web = parser.add_argument_group("web UI")
     web.add_argument("--serve", action="store_true", help="Run the browser UI instead of writing a report")
     web.add_argument("--host", default="127.0.0.1", help="Address to listen on (default: 127.0.0.1)")
     web.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
     args = parser.parse_args(argv)
-    if not args.serve and not args.address:
-        parser.error("an address is required (or use --serve)")
+    if not (args.serve or args.update_data or args.address):
+        parser.error("an address is required (or use --serve / --update-data)")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    if args.update_data:
+        from src.collectors.zillow import cache_path, download_zhvi
+        from src.http import make_session
+
+        print("[*] Downloading Zillow ZHVI (~120 MB)...")
+        try:
+            count = download_zhvi(make_session(), cache_path())
+        except (requests.RequestException, NeighborhoodReportError, OSError) as exc:
+            print(f"[!] Update failed: {exc}", file=sys.stderr)
+            return 3
+        print(f"[+] Cached {count:,} ZIPs in {cache_path()}")
+        return 0
 
     if args.serve:
         from src.web import serve

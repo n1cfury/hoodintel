@@ -18,11 +18,12 @@
   <tr><th>{{ p.category if p else key.replace("_", " ") | title }}</th><td>
   {% if p %}
     <div><strong>{{ link(p.name, p | osm_url) }}</strong> · <span class="dist">{{ "%.2f" | format(p.distance_miles) }} mi</span></div>
+    {% if p.detail %}<div class="role">{{ p.detail }}</div>{% endif %}
     {% if p.address and p.address != p.name %}<div class="role">{{ p.address }}</div>{% endif %}
     {% if p.phone %}<div class="role">{{ p.phone }}</div>{% endif %}
     {% if p.website %}<div class="role">{{ link(p.website, p.website) }}</div>{% endif %}
     <div class="small">{{ link("Map ↗", map_url(p.latitude, p.longitude)) }} · straight-line distance</div>
-  {% else %}{{ dash() }} <span class="role">None found within 20 km, or the lookup failed</span>{% endif %}
+  {% else %}{{ dash() }} <span class="role">None found nearby, or the lookup failed</span>{% endif %}
   </td></tr>
 {% endmacro %}
 {% set s = r.subject %}
@@ -53,6 +54,16 @@
       <tr><th>State</th><td>{{ s.state or dash() }}</td></tr>
       <tr><th>ZIP</th><td>{{ s.zip_code or dash() }}</td></tr>
       {% if s.county %}<tr><th>County</th><td>{{ s.county }}</td></tr>{% endif %}
+      <tr><th>Elevation</th><td>
+        {% set e = r.elevation %}
+        {% if e %}
+          {% if e.feet > 0 %}<span class="flag good">{{ "{:,.0f}".format(e.feet) }} ft above sea level</span>
+          {% elif e.feet < 0 %}<span class="flag bad">{{ "{:,.0f}".format(-e.feet) }} ft below sea level</span>
+          {% else %}<span class="flag warnf">At sea level</span>{% endif %}
+          <span class="role">{{ "{:,.1f}".format(e.meters) }} m</span>
+          <div class="small">Ground elevation at the geocoded point · {{ e.source }}</div>
+        {% else %}{{ dash() }}{% endif %}
+      </td></tr>
       <tr><th>Coordinates</th><td class="mono">{{ "%.6f" | format(s.latitude) }}, {{ "%.6f" | format(s.longitude) }}</td></tr>
     </table>
     <div class="links">{{ link("OpenStreetMap ↗", map_url(s.latitude, s.longitude)) }}</div>
@@ -77,32 +88,33 @@
   {% for key, p in r.important_landmarks.items() %}{{ poi_row(key, p) }}{% endfor %}
   </table></div>
 
-  <h2 class="section">Real estate</h2>
+  <h2 class="section">Real estate{% if s.zip_code %} · ZIP {{ s.zip_code }}{% endif %}</h2>
   <div class="card">
+  {% set z = r.home_value_index %}
   {% set m = r.real_estate_metrics %}
-  {% if m %}
+  {% if z or m %}
     <table>
-      <tr><th>Median home value</th><td><strong>{{ m.median_owner_occupied_home_value_usd | usd }}</strong> <span class="role">owner-occupied</span></td></tr>
-      <tr><th>Geography</th><td>{{ m.label or ("ZCTA " ~ m.zcta) }}</td></tr>
-      <tr><th>Source</th><td>{{ m.source }}</td></tr>
+    {% if z %}
+      <tr><th>Typical home value</th><td>
+        <strong>{{ z.typical_home_value_usd | usd }}</strong> <span class="role">as of {{ z.as_of }}</span>
+        {% if z.change_1y_pct is not none %}
+        <div>{% if z.change_1y_pct > 0 %}<span class="up">▲ {{ "%+.1f" | format(z.change_1y_pct) }}%</span>{% elif z.change_1y_pct < 0 %}<span class="down">▼ {{ "%+.1f" | format(z.change_1y_pct) }}%</span>{% else %}<strong>Flat</strong>{% endif %} <span class="role">over 1 year, from {{ z.year_ago_value_usd | usd }}</span></div>
+        {% endif %}
+        <div class="small">Average value of mid-priced homes (35th–65th percentile){% if z.region %} · {{ z.region }}{% endif %}</div>
+        <div class="small">Source: {{ z.source }}</div>
+      </td></tr>
+    {% endif %}
+    {% if m %}
+      <tr><th>Census average value</th><td><strong>{{ m.mean_owner_occupied_home_value_usd | usd }}</strong> <span class="role">owner-occupied</span></td></tr>
+      <tr><th>Census median value</th><td><strong>{{ m.median_owner_occupied_home_value_usd | usd }}</strong> <span class="role">owner-occupied</span>
+        <div class="small">{{ m.source }} · {{ m.label or ("ZCTA " ~ m.zcta) }}</div></td></tr>
+    {% endif %}
     </table>
-    <div class="pad"><p class="note">{{ m.note }} Census figures lag by design: a baseline, not a crystal ball.</p></div>
+    {% if m %}<div class="pad"><p class="note">{{ m.note }} Census figures lag by design: a baseline, not a crystal ball.</p></div>{% endif %}
   {% else %}
     <div class="pad">{{ dash() }} <span class="role">No real estate metrics available</span></div>
   {% endif %}
   </div>
-
-  {% if r.hardening_plan %}
-  <h2 class="section">Basic hardening plan</h2>
-  <div class="card"><table>
-  {% for h in r.hardening_plan %}
-    <tr><th>{{ h.item }}</th><td>
-      <div><span class="tag">× {{ h.quantity }}</span> {{ h.deploy_where }}</div>
-      <div class="role">{{ h.rationale }}</div>
-    </td></tr>
-  {% endfor %}
-  </table></div>
-  {% endif %}
 
   {% if r.operating_rules %}
   <h2 class="section">Operating rules</h2>

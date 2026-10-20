@@ -5,14 +5,17 @@ from datetime import datetime, timezone
 
 import requests
 
-from .analysis.hardening import build_basic_hardening_plan, build_basic_operating_rules
+from .analysis.rules import build_basic_operating_rules
 from .analysis.summarizer import build_executive_summary
 from .config import AppConfig, ReportOptions
 from .exceptions import NeighborhoodReportError
 from .models import LookupWarning, ReportData
+from .collectors.airports import AIRPORTS_SOURCE, closest_airport
 from .collectors.census import get_real_estate_metrics
+from .collectors.elevation import USGS_SOURCE, get_elevation
 from .collectors.geocode import geocode_address
 from .collectors.pois import find_closest_pois
+from .collectors.zillow import ZHVI_SOURCE, get_home_value_index
 from .http import make_session
 
 
@@ -39,25 +42,40 @@ def generate_report_data(
     )
     warnings.extend(LookupWarning(source="OpenStreetMap", message=msg) for msg in poi_errors)
 
+    elevation = None
+    try:
+        elevation = get_elevation(session, geocode.latitude, geocode.longitude, config)
+    except (requests.RequestException, NeighborhoodReportError) as exc:
+        warnings.append(LookupWarning(source="Elevation", message=str(exc)))
+
     real_estate = None
+    home_value = None
     if geocode.zip_code:
+        try:
+            home_value = get_home_value_index(session, geocode.zip_code, config)
+        except (requests.RequestException, NeighborhoodReportError, OSError) as exc:
+            warnings.append(LookupWarning(source="Zillow", message=str(exc)))
         try:
             real_estate = get_real_estate_metrics(session, geocode.zip_code, options.acs_year, config)
         except (requests.RequestException, NeighborhoodReportError) as exc:
             warnings.append(LookupWarning(source="ACS", message=str(exc)))
     else:
-        warnings.append(LookupWarning(source="ACS", message="No ZIP code determined from geocoder result."))
+        warnings.append(LookupWarning(source="Real estate", message="No ZIP code determined from geocoder result."))
 
     report = ReportData(
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         sources=[
             geocode.source,
-            f"U.S. Census ACS {options.acs_year} 5-year",
+            USGS_SOURCE,
             "OpenStreetMap (Nominatim, Overpass API)",
+            AIRPORTS_SOURCE,
+            ZHVI_SOURCE,
+            f"U.S. Census ACS {options.acs_year} 5-year",
         ],
         subject=geocode,
         important_landmarks={
             "closest_gas_station": poi_results.get("Closest Gas Station"),
+            "closest_airport": closest_airport(geocode.latitude, geocode.longitude),
         },
         emergency_services={
             "closest_hospital": poi_results.get("Closest Hospital"),
@@ -65,10 +83,11 @@ def generate_report_data(
             "closest_veterinary_clinic": poi_results.get("Closest Veterinary Clinic"),
         },
         real_estate_metrics=real_estate,
+        home_value_index=home_value,
+        elevation=elevation,
         warnings=warnings,
     )
     report.executive_summary = build_executive_summary(report)
-    report.hardening_plan = build_basic_hardening_plan(report)
     report.operating_rules = build_basic_operating_rules(report)
     if options.debug or options.include_debug_snapshot:
         report.debug_snapshot = report.to_dict()

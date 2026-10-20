@@ -3,6 +3,7 @@
     --line: #e2e1dc; --accent: #2f5d8a; --tag: #eef2f6;
     --good-bg: #dcfce7; --good-ink: #14532d; --warn-bg: #fef3c7; --warn-ink: #78350f;
     --bad-bg: #fee2e2; --bad-ink: #7f1d1d;
+    --up: #15803d; --down: #b91c1c;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -10,6 +11,7 @@
       --line: #33332f; --accent: #8fb4dc; --tag: #26303a;
       --good-bg: #14532d; --good-ink: #bbf7d0; --warn-bg: #713f12; --warn-ink: #fef3c7;
       --bad-bg: #7f1d1d; --bad-ink: #fee2e2;
+      --up: #4ade80; --down: #f87171;
     }
   }
   * { box-sizing: border-box; }
@@ -41,6 +43,8 @@
   .pad { padding: 14px 24px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
   .small { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .up { color: var(--up); font-weight: 700; }
+  .down { color: var(--down); font-weight: 700; }
   .dist { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
   .flag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 13px; font-weight: 600; }
   .flag.good { background: var(--good-bg); color: var(--good-ink); }
