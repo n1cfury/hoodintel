@@ -5,14 +5,25 @@
     --bad-bg: #fee2e2; --bad-ink: #7f1d1d;
     --up: #15803d; --down: #b91c1c;
   }
+  /* Dark tokens apply when the system is dark and the toggle hasn't
+     forced light, or when the toggle forces dark. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #141413; --card: #1e1e1c; --ink: #ebeae5; --muted: #9a9993;
       --line: #33332f; --accent: #8fb4dc; --tag: #26303a;
       --good-bg: #14532d; --good-ink: #bbf7d0; --warn-bg: #713f12; --warn-ink: #fef3c7;
       --bad-bg: #7f1d1d; --bad-ink: #fee2e2;
       --up: #4ade80; --down: #f87171;
     }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #141413; --card: #1e1e1c; --ink: #ebeae5; --muted: #9a9993;
+    --line: #33332f; --accent: #8fb4dc; --tag: #26303a;
+    --good-bg: #14532d; --good-ink: #bbf7d0; --warn-bg: #713f12; --warn-ink: #fef3c7;
+    --bad-bg: #7f1d1d; --bad-ink: #fee2e2;
+    --up: #4ade80; --down: #f87171;
   }
   * { box-sizing: border-box; }
   body {
@@ -61,6 +72,10 @@
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
   .toolbar form { margin: 0; }
   .toolbar .spacer { flex: 1; }
+  button[hidden] { display: none; }
+  .species li { margin: 0; }
+  .species li + li { margin-top: 6px; }
+  .species .sci { font-style: italic; }
   button, .btn {
     font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
     border: 1px solid var(--line); background: var(--card); color: var(--ink);

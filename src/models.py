@@ -63,6 +63,30 @@ class Elevation:
 
 
 @dataclass(slots=True)
+class Species:
+    common_name: str | None
+    scientific_name: str
+    observations: int
+    group: str | None = None  # iNaturalist iconic taxon, e.g. Plantae, Mammalia
+    url: str | None = None
+
+
+@dataclass(slots=True)
+class Environment:
+    area: str
+    radius_km: int
+    source: str
+    common_plants: list[Species] = field(default_factory=list)
+    common_trees: list[Species] = field(default_factory=list)
+    venomous_snakes: list[Species] = field(default_factory=list)
+    venomous_spiders: list[Species] = field(default_factory=list)
+    problem_wildlife: list[Species] = field(default_factory=list)
+    introduced_species: list[Species] = field(default_factory=list)
+    introduced_reference: str | None = None  # state the "introduced" status is relative to
+    introduced_names: list[str] = field(default_factory=list)  # scientific names, for tagging other lists
+
+
+@dataclass(slots=True)
 class LookupWarning:
     source: str
     message: str
@@ -78,6 +102,7 @@ class ReportData:
     real_estate_metrics: RealEstateMetrics | None = None
     home_value_index: HomeValueIndex | None = None
     elevation: Elevation | None = None
+    environment: Environment | None = None
     executive_summary: list[str] = field(default_factory=list)
     operating_rules: list[str] = field(default_factory=list)
     warnings: list[LookupWarning] = field(default_factory=list)

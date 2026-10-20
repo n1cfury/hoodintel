@@ -17,12 +17,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import hoodintel  # noqa: E402
 from src import web  # noqa: E402
 from src.exceptions import NeighborhoodReportError  # noqa: E402
-from src.models import (Elevation, GeocodeResult, HomeValueIndex, LookupWarning, POIResult,  # noqa: E402
-                        RealEstateMetrics, ReportData)
+from src.models import (Elevation, Environment, GeocodeResult, HomeValueIndex, LookupWarning,  # noqa: E402
+                        POIResult, RealEstateMetrics, ReportData, Species)
 from src import http as hood_http  # noqa: E402
-from src.collectors import airports, census, elevation, geocode, pois, zillow  # noqa: E402
+from src.collectors import airports, census, elevation, geocode, inaturalist, pois, zillow  # noqa: E402
 from src.config import AppConfig  # noqa: E402
-from src.renderers.html import _safe_url, render_report  # noqa: E402
+from src.renderers.html import THEME_JS, THEME_JS_CSP, _safe_url, render_report  # noqa: E402
 
 hood_http.MIN_INTERVAL = {}          # no Nominatim throttling in tests
 pois.OVERPASS_BACKOFF_SECONDS = [0, 0]
@@ -60,6 +60,17 @@ def sample_report(**overrides):
                                               "ZCTA5 92101", 750000, "Median value note.", 812345),
         home_value_index=HomeValueIndex("Zillow ZHVI", "92101", "San Diego, CA", 707705, "2026-09", 736961, -4.0),
         elevation=Elevation(47.8, 14.6, "USGS"),
+        environment=Environment(
+            area="San Diego, CA", radius_km=15, source="iNaturalist research-grade observations",
+            common_plants=[Species("Toyon", "Heteromeles arbutifolia", 2011, "Plantae", "https://www.inaturalist.org/taxa/53405")],
+            common_trees=[Species("coast live oak", "Quercus agrifolia", 657, "Plantae")],
+            venomous_snakes=[Species("Western Rattlesnake", "Crotalus oreganus", 492, "Reptilia")],
+            venomous_spiders=[],
+            problem_wildlife=[Species("Virginia Opossum", "Didelphis virginiana", 474, "Mammalia"),
+                              Species("Coyote", "Canis latrans", 1, "Mammalia")],
+            introduced_species=[Species("<i>Bad</i>", "Apis mellifera", 4941, "Insecta")],
+            introduced_reference="California",
+            introduced_names=["Apis mellifera", "Didelphis virginiana"]),
         executive_summary=["Target property: <script>x</script>."],
         warnings=[LookupWarning("Closest Urgent Care", "timeout")],
     )
@@ -83,6 +94,13 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Station 1", html)
         self.assertIn("Public · grades K-5", html)
         self.assertIn("Closest Grocery Store", html)            # None still gets a row
+        self.assertIn("Western Rattlesnake", html)
+        self.assertIn('<span class="flag good">None observed nearby</span>', html)   # no venomous spiders
+        self.assertRegex(html, r"Virginia Opossum <span class=\"tag\">introduced</span>")
+        self.assertNotRegex(html, r"Coyote <span class=\"tag\">introduced")
+        self.assertIn("1 observation<", html)
+        self.assertIn("&lt;i&gt;Bad&lt;/i&gt;", html)
+        self.assertIn("introduced (non-native) in California", html)
         self.assertIn("1.25 mi", html)
         self.assertIn("https://www.openstreetmap.org/node/42", html)
         self.assertIn('href="http://hospital.example"', html)
@@ -93,6 +111,14 @@ class RenderTests(unittest.TestCase):
         self.assertIn("⚠ Closest Urgent Care: timeout", html)
         self.assertIn("form-action 'none'", html)
         self.assertNotIn("Download HTML", html)
+
+    def test_theme_toggle_script_allowed_by_hash_only(self):
+        for html in (render_report(sample_report()), render_report(sample_report(), web=True)):
+            self.assertIn(f"script-src {THEME_JS_CSP};", html)
+            self.assertIn(f"<script>{THEME_JS}</script>", html)       # bytes identical to the hashed source
+            self.assertEqual(html.count("<script"), 1)
+            self.assertIn('id="theme-toggle" hidden', html)
+        self.assertIn(':root[data-theme="dark"]', html)
 
     def test_web_mode_adds_toolbar(self):
         html = render_report(sample_report(), web=True)
@@ -266,6 +292,38 @@ class NewSourceTests(unittest.TestCase):
             ["ZCTA5 00000", "-666666666", "0", "0", "00000"]])
         m = census.get_real_estate_metrics(session, "00000", 2023)
         self.assertEqual((m.median_owner_occupied_home_value_usd, m.mean_owner_occupied_home_value_usd), (None, None))
+
+
+class EnvironmentTests(unittest.TestCase):
+    @staticmethod
+    def result(name, common, count, ancestors, iconic="Animalia"):
+        return {"count": count, "taxon": {"id": count, "name": name, "preferred_common_name": common,
+                                          "iconic_taxon_name": iconic, "ancestor_ids": [48460, *ancestors]}}
+
+    def test_get_environment_splits_groups(self):
+        r = self.result
+        responses = [
+            {"results": [r("Quercus agrifolia", "coast live oak", 657, [47852], "Plantae")]},
+            {"results": [r("Quercus agrifolia", "coast live oak", 657, [47852], "Plantae"),
+                         r("Heteromeles arbutifolia", "Toyon", 2011, [], "Plantae")]},
+            {"results": [r("Crotalus oreganus", "Western Rattlesnake", 492, [30667]),
+                         r("Latrodectus geometricus", "Brown Widow", 1040, [47370]),
+                         r("Canis latrans", "Coyote", 455, [42051])]},
+            {"results": {"standard": [{"id": 1, "name": "United States", "admin_level": 0},
+                                      {"id": 14, "name": "California", "admin_level": 10}]}},
+            {"results": [r("Apis mellifera", "Western Honey Bee", 4941, [])]},
+        ]
+        session = mock.Mock()
+        session.get.side_effect = [resp(payload=p) for p in responses]
+        env = inaturalist.get_environment(session, 32.7, -117.1, "San Diego, CA")
+        self.assertEqual([x.common_name for x in env.common_trees], ["coast live oak"])
+        self.assertEqual([x.common_name for x in env.common_plants], ["Toyon"])      # tree removed from plants
+        self.assertEqual([x.common_name for x in env.venomous_snakes], ["Western Rattlesnake"])
+        self.assertEqual([x.common_name for x in env.venomous_spiders], ["Brown Widow"])
+        self.assertEqual([x.common_name for x in env.problem_wildlife], ["Coyote"])
+        self.assertEqual((env.introduced_reference, env.introduced_names), ("California", ["Apis mellifera"]))
+        intro_call = session.get.call_args_list[-1]
+        self.assertEqual((intro_call.kwargs["params"]["place_id"], intro_call.kwargs["params"]["introduced"]), (14, "true"))
 
 
 class CliTests(unittest.TestCase):

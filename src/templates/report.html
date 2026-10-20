@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action {% if web %}'self'{% else %}'none'{% endif %}">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src {{ theme_js_csp }}; style-src 'unsafe-inline'; base-uri 'none'; form-action {% if web %}'self'{% else %}'none'{% endif %}">
 <meta name="referrer" content="no-referrer">
 <title>{{ r.subject.matched_address }} — HoodIntel</title>
 <style>
 {% include "style.css" %}
 </style>
+<script>{{ theme_js }}</script>
 </head>
 <body>
 <main>
@@ -27,10 +28,12 @@
   </td></tr>
 {% endmacro %}
 {% set s = r.subject %}
-{% if web %}
   <div class="toolbar">
+{% if web %}
     <a class="btn" href="/">← New report</a>
+{% endif %}
     <span class="spacer"></span>
+{% if web %}
     {% for fmt, label in [("html", "Download HTML"), ("json", "Download JSON")] %}
     <form method="post" action="/report">
       <input type="hidden" name="address" value="{{ s.input_address }}">
@@ -39,8 +42,9 @@
       <button type="submit">{{ label }}</button>
     </form>
     {% endfor %}
-  </div>
 {% endif %}
+    <button type="button" id="theme-toggle" hidden>Dark mode</button>
+  </div>
 
   <h2 class="section">Subject property</h2>
   <div class="card">
@@ -113,6 +117,37 @@
     {% if m %}<div class="pad"><p class="note">{{ m.note }} Census figures lag by design: a baseline, not a crystal ball.</p></div>{% endif %}
   {% else %}
     <div class="pad">{{ dash() }} <span class="role">No real estate metrics available</span></div>
+  {% endif %}
+  </div>
+
+  {% set env_ = r.environment %}
+  {% macro species_list(items, empty, introduced_names=[]) %}
+    {% if items %}
+    <ul class="plain species">
+    {% for sp in items %}
+      <li>{{ link(sp.common_name or sp.scientific_name, sp.url) }}{% if sp.scientific_name in introduced_names %} <span class="tag">introduced</span>{% endif %}
+        <span class="role">{% if sp.common_name %}<span class="sci">{{ sp.scientific_name }}</span> · {% endif %}{{ "{:,}".format(sp.observations) }} observation{{ "s" if sp.observations != 1 }}</span></li>
+    {% endfor %}
+    </ul>
+    {% else %}{{ empty }}{% endif %}
+  {% endmacro %}
+  <h2 class="section">Environmental{% if env_ %} · {{ env_.area }}{% endif %}</h2>
+  <div class="card">
+  {% if env_ %}
+    {% set introduced_names = env_.introduced_names %}
+    <table>
+      <tr><th>Common plants</th><td>{{ species_list(env_.common_plants, dash(), introduced_names) }}</td></tr>
+      <tr><th>Common trees</th><td>{{ species_list(env_.common_trees, dash(), introduced_names) }}</td></tr>
+      <tr><th>Venomous snakes</th><td>{{ species_list(env_.venomous_snakes, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}</td></tr>
+      <tr><th>Venomous spiders</th><td>{{ species_list(env_.venomous_spiders, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}</td></tr>
+      <tr><th>Problem wildlife</th><td>{{ species_list(env_.problem_wildlife, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}
+        <div class="small">Native or not: coyotes, deer, wild hogs, bears, raccoons, skunks, rats and similar animals behind property damage, pet attacks and vehicle collisions.</div></td></tr>
+      <tr><th>Invasive &amp; introduced</th><td>{{ species_list(env_.introduced_species, dash()) }}
+        {% if env_.introduced_reference %}<div class="small">Species iNaturalist lists as introduced (non-native) in {{ env_.introduced_reference }}. Not all are harmful, and not every invasive pest is on the list.</div>{% endif %}</td></tr>
+    </table>
+    <div class="pad"><p class="note">Research-grade {{ env_.source | replace("research-grade ", "") }} within {{ env_.radius_km }} km of the address, ranked by number of observations. That reflects what people notice and photograph, not how abundant a species is; absence from a list doesn't mean absence from the area.</p></div>
+  {% else %}
+    <div class="pad">{{ dash() }} <span class="role">No environmental data available</span></div>
   {% endif %}
   </div>
 

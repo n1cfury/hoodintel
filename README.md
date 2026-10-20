@@ -117,8 +117,9 @@ python hoodintel.py "1234 Example St, San Diego, CA 92101"
 | `--update-data` | Download or refresh the Zillow home value cache now, then exit |
 | `--serve` | Run the browser UI instead (`--host`, `--port`) |
 
-The HTML report is a single self-contained file: no scripts, no external requests, light and dark
-mode, and it prints cleanly (use the browser's Print → Save as PDF if you need a PDF).
+The HTML report is a single self-contained file: no external requests, and only one small inline
+script, the light/dark toggle (allowed by hash in the page's Content-Security-Policy). With no
+choice saved it follows the system setting. It prints cleanly (use the browser's Print → Save as PDF if you need a PDF).
 
 ## Data sources
 
@@ -129,6 +130,7 @@ mode, and it prints cleanly (use the browser's Print → Save as PDF if you need
 | OpenStreetMap Overpass API | Fallback POI source for categories Nominatim misses. Public servers are often at capacity, so it's tried second |
 | USGS 3DEP Elevation Point Query Service | Ground elevation (ft and m) at the address. Green above sea level, red below |
 | OurAirports | Closest regional or international airport: U.S. large and medium airports with scheduled passenger service. Bundled as `src/data/us_airports.csv` (public domain); refresh with `python scripts/update_airports.py` |
+| iNaturalist | Environmental section: common plants and trees, venomous snakes and spiders, problem wildlife (coyotes, deer, wild hogs, bears, raccoons, ...), and species introduced to the state. From research-grade observations within 15 km, ranked by observation count |
 | Zillow Home Value Index (ZHVI) | ZIP-level typical home value (average value of mid-priced homes, the 35th–65th percentile) and its 1-year change |
 | U.S. Census ACS 5-year | ZIP-level (ZCTA) average and median owner-occupied home value. Needs `CENSUS_API_KEY` |
 
@@ -140,7 +142,10 @@ mode, and it prints cleanly (use the browser's Print → Save as PDF if you need
   time it's needed (about 20 s), reduced to a ~2 MB per-ZIP file, and refreshed after 30 days. The web
   UI downloads it in the background at startup. The cache lives in `$HOODINTEL_CACHE_DIR`, or
   `~/.cache/hoodintel` by default. If a refresh fails, the old cache keeps being used.
-- **Usage policies:** Nominatim requests are spaced at least 1.1 s apart (shared across concurrent web
+- **Environmental:** venomous groups are vipers and elapids (snakes) and widow and recluse spiders.
+  Species iNaturalist lists as introduced in the state are tagged "introduced" in every list.
+  iNaturalist runs at the same time as the OpenStreetMap lookups, so it adds little time.
+- **Usage policies:** iNaturalist requests are spaced 1 s apart. Nominatim requests are spaced at least 1.1 s apart (shared across concurrent web
   requests), and Overpass is retried with backoff when busy. The web UI caches each report for an hour,
   so the download buttons don't repeat the lookups. These public services aren't meant for heavy
   traffic; a busy shared deployment should run its own instances.

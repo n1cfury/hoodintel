@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from .collectors.airports import AIRPORTS_SOURCE, closest_airport
 from .collectors.census import get_real_estate_metrics
 from .collectors.elevation import USGS_SOURCE, get_elevation
 from .collectors.geocode import geocode_address
+from .collectors.inaturalist import INAT_SOURCE, get_environment
 from .collectors.pois import find_closest_pois
 from .collectors.zillow import ZHVI_SOURCE, get_home_value_index
 from .http import make_session
@@ -36,6 +38,14 @@ def generate_report_data(
     if geocode.source != "U.S. Census Geocoder":
         note = f", {geocode.precision}" if geocode.precision else ""
         warnings.append(LookupWarning(source="Geocoder", message=f"No Census match; location from {geocode.source}{note}."))
+
+    # iNaturalist is a different host with its own rate limit, so it runs
+    # alongside the OpenStreetMap lookups on its own session.
+    area = ", ".join(p for p in [geocode.city and geocode.city.title(), geocode.state] if p) or None
+    pool = ThreadPoolExecutor(max_workers=1)
+    environment_future = pool.submit(
+        get_environment, make_session(config), geocode.latitude, geocode.longitude, area, config
+    )
 
     poi_results, poi_errors = find_closest_pois(
         session, lat=geocode.latitude, lon=geocode.longitude, config=config
@@ -62,6 +72,14 @@ def generate_report_data(
     else:
         warnings.append(LookupWarning(source="Real estate", message="No ZIP code determined from geocoder result."))
 
+    environment = None
+    try:
+        environment = environment_future.result()
+    except (requests.RequestException, ValueError) as exc:
+        warnings.append(LookupWarning(source="iNaturalist", message=str(exc)))
+    finally:
+        pool.shutdown(wait=False)
+
     report = ReportData(
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         sources=[
@@ -69,6 +87,7 @@ def generate_report_data(
             USGS_SOURCE,
             "OpenStreetMap (Nominatim, Overpass API)",
             AIRPORTS_SOURCE,
+            INAT_SOURCE,
             ZHVI_SOURCE,
             f"U.S. Census ACS {options.acs_year} 5-year",
         ],
@@ -88,6 +107,7 @@ def generate_report_data(
         real_estate_metrics=real_estate,
         home_value_index=home_value,
         elevation=elevation,
+        environment=environment,
         warnings=warnings,
     )
     report.executive_summary = build_executive_summary(report)

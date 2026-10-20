@@ -35,6 +35,12 @@ def build_executive_summary(report: ReportData) -> list[str]:
             f"Closest veterinary clinic identified at roughly {vet.distance_miles} miles."
         )
 
+    env = report.environment
+    if env:
+        venomous = [sp.common_name or sp.scientific_name for sp in env.venomous_snakes + env.venomous_spiders]
+        if venomous:
+            summary.append(f"Venomous species observed within {env.radius_km} km: {', '.join(venomous)}.")
+
     hvi = report.home_value_index
     if hvi:
         change = f" ({hvi.change_1y_pct:+.1f}% over 1 year)" if hvi.change_1y_pct is not None else ""

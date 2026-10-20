@@ -22,7 +22,7 @@ def make_session(config: AppConfig | None = None) -> requests.Session:
 
 # Per-host minimum spacing between requests, shared across threads so the
 # web UI's concurrent reports still respect each service's usage policy.
-MIN_INTERVAL = {"nominatim.openstreetmap.org": 1.1}
+MIN_INTERVAL = {"nominatim.openstreetmap.org": 1.1, "api.inaturalist.org": 1.0}
 _last_request: dict[str, float] = {}
 _throttle_lock = threading.Lock()
 

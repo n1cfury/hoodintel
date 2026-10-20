@@ -1,11 +1,14 @@
 """ReportData -> standalone HTML. No network, no source-specific logic."""
 from __future__ import annotations
 
+import base64
+import hashlib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from markupsafe import Markup
 
 from ..models import ReportData
 
@@ -48,6 +51,13 @@ def _map_url(lat: Any, lon: Any, zoom: int = 16) -> str | None:
     return f"https://www.openstreetmap.org/?mlat={lat:.6f}&mlon={lon:.6f}#map={zoom}/{lat:.6f}/{lon:.6f}"
 
 
+# The theme toggle is the only script. It's inlined so downloaded reports
+# stay single-file, and allowed by hash in each page's CSP.
+THEME_JS = (TEMPLATE_DIR / "theme.js").read_text(encoding="utf-8")
+THEME_JS_CSP = "'sha256-" + base64.b64encode(hashlib.sha256(THEME_JS.encode("utf-8")).digest()).decode() + "'"
+
+env.globals["theme_js"] = Markup(THEME_JS)
+env.globals["theme_js_csp"] = Markup(THEME_JS_CSP)
 env.filters["safe_url"] = _safe_url
 env.filters["usd"] = _usd
 env.filters["osm_url"] = _osm_url
