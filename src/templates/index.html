@@ -14,6 +14,7 @@
 <body>
 <main>
   <div class="toolbar">
+    {% if audit_enabled %}<a class="btn" href="/history">History</a>{% endif %}
     <span class="spacer"></span>
     <button type="button" id="theme-toggle" hidden>Dark mode</button>
   </div>

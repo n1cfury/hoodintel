@@ -121,6 +121,31 @@ The HTML report is a single self-contained file: no external requests, and only 
 script, the light/dark toggle (allowed by hash in the page's Content-Security-Policy). With no
 choice saved it follows the system setting. It prints cleanly (use the browser's Print → Save as PDF if you need a PDF).
 
+## Request history (audit log)
+
+Every report request is logged, from the web UI and the command line, including failures and
+rejected input. The **History** page (`/history`) lists them newest first:
+
+- when the request came in, and when the report data was generated (a re-opened report served from
+  the 1-hour cache shows its original generation time and "Cached copy")
+- the queried address, and the address it matched
+- the result: generated, address not found, data source error or invalid input, with the error
+- web or CLI, HTML or JSON, download or not, client address and how long it took
+- an **Open** button to bring a report up again
+
+**Download CSV** (`/history.csv`) exports everything. Cells that a spreadsheet would treat as
+formulas are prefixed with `'`.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `HOODINTEL_AUDIT_DB` | `~/.local/share/hoodintel/audit.db` | SQLite file for the log. In a container, put it on a mounted volume |
+| `HOODINTEL_AUDIT` | on | `0` turns logging and the history page off |
+
+The history page has no login: anyone who can open the site can see it. That's fine on
+`127.0.0.1` (the default); a shared deployment should sit behind authentication. Behind a reverse
+proxy, the client column shows the proxy's address unless the app is configured to trust
+`X-Forwarded-For`. To clear the history, delete the database file.
+
 ## Data sources
 
 | Source | Used for |

@@ -31,6 +31,7 @@
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   main { max-width: 720px; margin: 0 auto; }
+  main.wide { max-width: 1080px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   header { padding: 20px 24px; border-bottom: 1px solid var(--line); }
   h1 { margin: 0; font-size: 24px; line-height: 1.25; }
@@ -76,6 +77,12 @@
   .species li { margin: 0; }
   .species li + li { margin-top: 6px; }
   .species .sci { font-style: italic; }
+  .scroll { overflow-x: auto; }
+  table.history { min-width: 760px; }
+  table.history th { width: auto; padding: 10px 14px; font-size: 12px; }
+  table.history td { padding: 10px 14px; font-size: 14px; }
+  table.history td form { margin: 0; }
+  .nowrap { white-space: nowrap; }
   button, .btn {
     font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
     border: 1px solid var(--line); background: var(--card); color: var(--ink);
@@ -90,6 +97,7 @@
     th, td { display: block; width: 100%; padding: 8px 16px; }
     th { border-bottom: 0; padding-bottom: 0; }
     header, .links, .pad { padding-left: 16px; padding-right: 16px; }
+    table.history th, table.history td { display: table-cell; width: auto; }
   }
   @media print {
     body { background: #fff; padding: 0; }

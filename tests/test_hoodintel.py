@@ -3,7 +3,10 @@
 No network: the pipeline is patched with a synthetic report that includes
 hostile OSM tag values to check escaping and link filtering.
 """
+import csv
+import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -14,7 +17,12 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Keep test runs out of the real request history.
+_AUDIT_DIR = tempfile.TemporaryDirectory()
+os.environ["HOODINTEL_AUDIT_DB"] = str(Path(_AUDIT_DIR.name) / "audit.db")
+
 import hoodintel  # noqa: E402
+from src import audit  # noqa: E402
 from src import web  # noqa: E402
 from src.exceptions import NeighborhoodReportError  # noqa: E402
 from src.models import (Elevation, Environment, GeocodeResult, HomeValueIndex, LookupWarning,  # noqa: E402
@@ -324,6 +332,64 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual((env.introduced_reference, env.introduced_names), ("California", ["Apis mellifera"]))
         intro_call = session.get.call_args_list[-1]
         self.assertEqual((intro_call.kwargs["params"]["place_id"], intro_call.kwargs["params"]["introduced"]), (14, "true"))
+
+
+class AuditTests(unittest.TestCase):
+    def setUp(self):
+        audit.db_path().unlink(missing_ok=True)
+        web._cache.clear()
+        self.client = web.app.test_client()
+
+    def test_web_requests_are_logged_and_listed(self):
+        with mock.patch.object(web, "generate_report_data", return_value=sample_report()):
+            self.client.post("/report", data={"address": ADDRESS})
+            self.client.post("/report", data={"address": ADDRESS, "format": "json", "download": "1"})
+        with mock.patch.object(web, "generate_report_data", side_effect=NeighborhoodReportError("No match")):
+            self.client.post("/report", data={"address": "=cmd|' /C calc'!A0"})
+        self.client.post("/report", data={"address": " "})
+
+        rows, total = audit.recent()
+        self.assertEqual(total, 4)
+        self.assertEqual([r["outcome"] for r in rows], ["rejected", "not_found", "ok", "ok"])
+        first, second = rows[3], rows[2]
+        self.assertEqual((first["queried_address"], first["source"], first["cached"]), (ADDRESS, "web", 0))
+        self.assertEqual(first["matched_address"], "1234 EXAMPLE ST, SAN DIEGO, CA, 92101")
+        self.assertEqual(first["generated_at"], "2026-10-20T00:00:00+00:00")
+        self.assertEqual((second["cached"], second["output_format"], second["download"]), (1, "json", 1))
+        self.assertEqual(rows[0]["queried_address"], "(empty)")
+
+        page = self.client.get("/history").get_data(as_text=True)
+        self.assertIn("Request history", page)
+        self.assertIn("2026-10-20 00:00:00 UTC", page)        # report generated time
+        self.assertIn("Address not found", page)
+        self.assertIn("Cached copy", page)
+        self.assertIn("4 requests logged", page)
+
+        exported = self.client.get("/history.csv")
+        self.assertIn("attachment", exported.headers["Content-Disposition"])
+        table = list(csv.DictReader(io.StringIO(exported.get_data(as_text=True))))
+        self.assertEqual(len(table), 4)
+        self.assertEqual(table[2]["queried_address"], "'=cmd|' /C calc'!A0")   # formula neutralized
+
+    def test_cli_runs_are_logged(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(hoodintel, "generate_report_data", return_value=sample_report()):
+            hoodintel.main([ADDRESS, "--output", str(Path(d) / "r.html")])
+        rows, _ = audit.recent()
+        self.assertEqual((rows[0]["source"], rows[0]["outcome"]), ("cli", "ok"))
+
+    def test_disabled(self):
+        with mock.patch.dict(os.environ, {"HOODINTEL_AUDIT": "0"}), \
+                mock.patch.object(web, "generate_report_data", return_value=sample_report()):
+            self.client.post("/report", data={"address": ADDRESS})
+            self.assertIn("turned off", self.client.get("/history").get_data(as_text=True))
+            self.assertNotIn('href="/history"', self.client.get("/").get_data(as_text=True))
+        self.assertFalse(audit.db_path().exists())
+
+    def test_write_failure_does_not_break_report(self):
+        with mock.patch.object(audit, "_connect", side_effect=audit.sqlite3.OperationalError("disk full")), \
+                mock.patch.object(web, "generate_report_data", return_value=sample_report()):
+            self.assertEqual(self.client.post("/report", data={"address": ADDRESS}).status_code, 200)
 
 
 class CliTests(unittest.TestCase):

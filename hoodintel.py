@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import requests
 
+from src import audit
 from src.config import ReportOptions
 from src.exceptions import NeighborhoodReportError
 from src.pipeline import generate_report_data
@@ -72,6 +74,14 @@ def main(argv: list[str] | None = None) -> int:
         json_output_path=Path(args.json_out).expanduser().resolve() if args.json_out else None,
     )
 
+    started = time.monotonic()
+
+    def log(outcome: str, **fields) -> None:
+        audit.record(audit.AuditEntry(
+            queried_address=args.address, outcome=outcome, source="cli", output_format="html",
+            duration_ms=round((time.monotonic() - started) * 1000), **fields,
+        ))
+
     try:
         report = generate_report_data(args.address, options=options)
         write_report(report, output_path)
@@ -79,20 +89,24 @@ def main(argv: list[str] | None = None) -> int:
         if options.json_output_path:
             write_json(report, options.json_output_path)
             print(f"[+] Wrote JSON: {options.json_output_path}")
+        log("ok", matched_address=report.subject.matched_address, generated_at=report.generated_at_utc)
         return 0
     except requests.HTTPError as exc:
+        log("upstream_error", detail=str(exc))
         print(f"[!] HTTP error: {exc}", file=sys.stderr)
         return 2
     except requests.RequestException as exc:
+        log("upstream_error", detail=str(exc))
         print(f"[!] Network error: {exc}", file=sys.stderr)
         return 3
     except NeighborhoodReportError as exc:
+        log("not_found", detail=str(exc))
         print(f"[!] Report error: {exc}", file=sys.stderr)
         return 4
     except Exception as exc:  # pragma: no cover - top-level safeguard
+        log("error", detail=str(exc))
         print(f"[!] Unexpected error: {exc}", file=sys.stderr)
         return 99
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -62,6 +63,17 @@ env.filters["safe_url"] = _safe_url
 env.filters["usd"] = _usd
 env.filters["osm_url"] = _osm_url
 env.globals["map_url"] = _map_url
+
+
+def _when(iso: Any) -> str:
+    """'2026-10-21T18:42:26.30+00:00' -> '2026-10-21 18:42:26 UTC'."""
+    try:
+        return datetime.fromisoformat(str(iso)).strftime("%Y-%m-%d %H:%M:%S UTC")
+    except ValueError:
+        return str(iso)
+
+
+env.filters["when"] = _when
 
 
 def render_report(report: ReportData, *, web: bool = False) -> str:
