@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 import requests
 
-from .analysis.hardening import build_basic_hardening_plan, build_basic_operating_rules
+from .analysis.rules import build_basic_operating_rules
 from .analysis.summarizer import build_executive_summary
-from .config import AppConfig, POI_QUERIES, ReportOptions
+from .config import AppConfig, ReportOptions
 from .exceptions import NeighborhoodReportError
 from .models import LookupWarning, ReportData
+from .collectors.airports import AIRPORTS_SOURCE, closest_airport
 from .collectors.census import get_real_estate_metrics
+from .collectors.elevation import USGS_SOURCE, get_elevation
 from .collectors.geocode import geocode_address
-from .collectors.pois import query_overpass_closest
+from .collectors.inaturalist import INAT_SOURCE, get_environment
+from .collectors.pois import find_closest_pois
+from .collectors.zillow import ZHVI_SOURCE, get_home_value_index
 from .http import make_session
 
 
@@ -29,52 +34,83 @@ def generate_report_data(
 
     geocode = geocode_address(session, address, config)
 
-    poi_results = {}
     warnings: list[LookupWarning] = []
-    for label, selectors in POI_QUERIES.items():
-        try:
-            poi_results[label] = query_overpass_closest(
-                session,
-                lat=geocode.latitude,
-                lon=geocode.longitude,
-                category=label,
-                selectors=selectors,
-                config=config,
-            )
-        except requests.RequestException as exc:
-            warnings.append(LookupWarning(source=label, message=str(exc)))
-            poi_results[label] = None
+    if geocode.source != "U.S. Census Geocoder":
+        note = f", {geocode.precision}" if geocode.precision else ""
+        warnings.append(LookupWarning(source="Geocoder", message=f"No Census match; location from {geocode.source}{note}."))
+
+    # iNaturalist is a different host with its own rate limit, so it runs
+    # alongside the OpenStreetMap lookups on its own session.
+    area = ", ".join(p for p in [geocode.city and geocode.city.title(), geocode.state] if p) or None
+    pool = ThreadPoolExecutor(max_workers=1)
+    environment_future = pool.submit(
+        get_environment, make_session(config), geocode.latitude, geocode.longitude, area, config
+    )
+
+    poi_results, poi_errors = find_closest_pois(
+        session, lat=geocode.latitude, lon=geocode.longitude, config=config
+    )
+    warnings.extend(LookupWarning(source="OpenStreetMap", message=msg) for msg in poi_errors)
+
+    elevation = None
+    try:
+        elevation = get_elevation(session, geocode.latitude, geocode.longitude, config)
+    except (requests.RequestException, NeighborhoodReportError) as exc:
+        warnings.append(LookupWarning(source="Elevation", message=str(exc)))
 
     real_estate = None
+    home_value = None
     if geocode.zip_code:
+        try:
+            home_value = get_home_value_index(session, geocode.zip_code, config)
+        except (requests.RequestException, NeighborhoodReportError, OSError) as exc:
+            warnings.append(LookupWarning(source="Zillow", message=str(exc)))
         try:
             real_estate = get_real_estate_metrics(session, geocode.zip_code, options.acs_year, config)
         except (requests.RequestException, NeighborhoodReportError) as exc:
             warnings.append(LookupWarning(source="ACS", message=str(exc)))
     else:
-        warnings.append(LookupWarning(source="ACS", message="No ZIP code determined from geocoder result."))
+        warnings.append(LookupWarning(source="Real estate", message="No ZIP code determined from geocoder result."))
+
+    environment = None
+    try:
+        environment = environment_future.result()
+    except (requests.RequestException, ValueError) as exc:
+        warnings.append(LookupWarning(source="iNaturalist", message=str(exc)))
+    finally:
+        pool.shutdown(wait=False)
 
     report = ReportData(
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         sources=[
-            "U.S. Census Geocoder",
+            geocode.source,
+            USGS_SOURCE,
+            "OpenStreetMap (Nominatim, Overpass API)",
+            AIRPORTS_SOURCE,
+            INAT_SOURCE,
+            ZHVI_SOURCE,
             f"U.S. Census ACS {options.acs_year} 5-year",
-            "OpenStreetMap / Overpass API",
         ],
         subject=geocode,
         important_landmarks={
+            "closest_grocery_store": poi_results.get("Closest Grocery Store"),
+            "closest_school": poi_results.get("Closest School"),
             "closest_gas_station": poi_results.get("Closest Gas Station"),
+            "closest_airport": closest_airport(geocode.latitude, geocode.longitude),
         },
         emergency_services={
             "closest_hospital": poi_results.get("Closest Hospital"),
             "closest_urgent_care": poi_results.get("Closest Urgent Care"),
+            "closest_fire_station": poi_results.get("Closest Fire Station"),
             "closest_veterinary_clinic": poi_results.get("Closest Veterinary Clinic"),
         },
         real_estate_metrics=real_estate,
+        home_value_index=home_value,
+        elevation=elevation,
+        environment=environment,
         warnings=warnings,
     )
     report.executive_summary = build_executive_summary(report)
-    report.hardening_plan = build_basic_hardening_plan(report)
     report.operating_rules = build_basic_operating_rules(report)
     if options.debug or options.include_debug_snapshot:
         report.debug_snapshot = report.to_dict()

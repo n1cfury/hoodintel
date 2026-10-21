@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src {{ theme_js_csp }}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<title>HoodIntel</title>
+<style>
+{% include "style.css" %}
+</style>
+<script>{{ theme_js }}</script>
+</head>
+<body>
+<main>
+  <div class="toolbar">
+    {% if audit_enabled %}<a class="btn" href="/history">History</a>{% endif %}
+    <span class="spacer"></span>
+    <button type="button" id="theme-toggle" hidden>Dark mode</button>
+  </div>
+  <h2 class="section">HoodIntel</h2>
+  <div class="card">
+    <header>
+      <h1>Neighborhood report</h1>
+      <p class="desc">Enter a U.S. street address. HoodIntel geocodes it and pulls nearby emergency services, landmarks and Census housing data from public sources.</p>
+    </header>
+    <form class="pad" method="post" action="/report">
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <label for="address">Address</label>
+      <input type="text" id="address" name="address" value="{{ address or "" }}" maxlength="{{ max_len }}"
+             placeholder="1234 Example St, San Diego, CA 92101" required autofocus autocomplete="street-address">
+      <p class="note">Usually takes 5–15 seconds, longer when OpenStreetMap is busy. Include the city and state, or the ZIP.</p>
+      <p><button class="primary" type="submit">Generate report</button></p>
+    </form>
+  </div>
+  <footer>
+    <p>Sources: U.S. Census, USGS, OpenStreetMap, OurAirports, Zillow, iNaturalist. Public information only.</p>
+  </footer>
+</main>
+</body>
+</html>

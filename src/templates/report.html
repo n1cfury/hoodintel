@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src {{ theme_js_csp }}; style-src 'unsafe-inline'; base-uri 'none'; form-action {% if web %}'self'{% else %}'none'{% endif %}">
+<meta name="referrer" content="no-referrer">
+<title>{{ r.subject.matched_address }} — HoodIntel</title>
+<style>
+{% include "style.css" %}
+</style>
+<script>{{ theme_js }}</script>
+</head>
+<body>
+<main>
+{% macro dash() %}<span class="empty">—</span>{% endmacro %}
+{% macro link(text, url) %}{% set u = url | safe_url %}{% if u %}<a href="{{ u }}" rel="noopener noreferrer">{{ text }}</a>{% else %}{{ text }}{% endif %}{% endmacro %}
+{% macro poi_row(key, p) %}
+  <tr><th>{{ p.category if p else key.replace("_", " ") | title }}</th><td>
+  {% if p %}
+    <div><strong>{{ link(p.name, p | osm_url) }}</strong> · <span class="dist">{{ "%.2f" | format(p.distance_miles) }} mi</span></div>
+    {% if p.detail %}<div class="role">{{ p.detail }}</div>{% endif %}
+    {% if p.address and p.address != p.name %}<div class="role">{{ p.address }}</div>{% endif %}
+    {% if p.phone %}<div class="role">{{ p.phone }}</div>{% endif %}
+    {% if p.website %}<div class="role">{{ link(p.website, p.website) }}</div>{% endif %}
+    <div class="small">{{ link("Map ↗", map_url(p.latitude, p.longitude)) }} · straight-line distance</div>
+  {% else %}{{ dash() }} <span class="role">None found nearby, or the lookup failed</span>{% endif %}
+  </td></tr>
+{% endmacro %}
+{% set s = r.subject %}
+  <div class="toolbar">
+{% if web %}
+    <a class="btn" href="/">← New report</a>
+    <a class="btn" href="/history">History</a>
+{% endif %}
+    <span class="spacer"></span>
+{% if web %}
+    {% for fmt, label in [("html", "Download HTML"), ("json", "Download JSON")] %}
+    <form method="post" action="/report">
+      <input type="hidden" name="address" value="{{ s.input_address }}">
+      <input type="hidden" name="format" value="{{ fmt }}">
+      <input type="hidden" name="download" value="1">
+      <button type="submit">{{ label }}</button>
+    </form>
+    {% endfor %}
+{% endif %}
+    <button type="button" id="theme-toggle" hidden>Dark mode</button>
+  </div>
+
+  <h2 class="section">Subject property</h2>
+  <div class="card">
+    <header>
+      <h1>{{ s.matched_address }}</h1>
+      {% if s.input_address | upper != s.matched_address | upper %}<p class="desc">Searched for: {{ s.input_address }}</p>{% endif %}
+      {% if s.precision %}<p class="note"><span class="flag warnf">{{ s.precision | capitalize }}</span> Location from {{ s.source }}; distances are less exact.</p>{% endif %}
+    </header>
+    <table>
+      <tr><th>City</th><td>{{ s.city or dash() }}</td></tr>
+      <tr><th>State</th><td>{{ s.state or dash() }}</td></tr>
+      <tr><th>ZIP</th><td>{{ s.zip_code or dash() }}</td></tr>
+      {% if s.county %}<tr><th>County</th><td>{{ s.county }}</td></tr>{% endif %}
+      <tr><th>Elevation</th><td>
+        {% set e = r.elevation %}
+        {% if e %}
+          {% if e.feet > 0 %}<span class="flag good">{{ "{:,.0f}".format(e.feet) }} ft above sea level</span>
+          {% elif e.feet < 0 %}<span class="flag bad">{{ "{:,.0f}".format(-e.feet) }} ft below sea level</span>
+          {% else %}<span class="flag warnf">At sea level</span>{% endif %}
+          <span class="role">{{ "{:,.1f}".format(e.meters) }} m</span>
+          <div class="small">Ground elevation at the geocoded point · {{ e.source }}</div>
+        {% else %}{{ dash() }}{% endif %}
+      </td></tr>
+      <tr><th>Coordinates</th><td class="mono">{{ "%.6f" | format(s.latitude) }}, {{ "%.6f" | format(s.longitude) }}</td></tr>
+    </table>
+    <div class="links">{{ link("OpenStreetMap ↗", map_url(s.latitude, s.longitude)) }}</div>
+  </div>
+
+  {% if r.executive_summary %}
+  <h2 class="section">Executive summary</h2>
+  <div class="card">
+    <ul class="bullets">
+    {% for line in r.executive_summary %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <h2 class="section">Emergency services</h2>
+  <div class="card"><table>
+  {% for key, p in r.emergency_services.items() %}{{ poi_row(key, p) }}{% endfor %}
+  </table></div>
+
+  <h2 class="section">Important landmarks</h2>
+  <div class="card"><table>
+  {% for key, p in r.important_landmarks.items() %}{{ poi_row(key, p) }}{% endfor %}
+  </table></div>
+
+  <h2 class="section">Real estate{% if s.zip_code %} · ZIP {{ s.zip_code }}{% endif %}</h2>
+  <div class="card">
+  {% set z = r.home_value_index %}
+  {% set m = r.real_estate_metrics %}
+  {% if z or m %}
+    <table>
+    {% if z %}
+      <tr><th>Typical home value</th><td>
+        <strong>{{ z.typical_home_value_usd | usd }}</strong> <span class="role">as of {{ z.as_of }}</span>
+        {% if z.change_1y_pct is not none %}
+        <div>{% if z.change_1y_pct > 0 %}<span class="up">▲ {{ "%+.1f" | format(z.change_1y_pct) }}%</span>{% elif z.change_1y_pct < 0 %}<span class="down">▼ {{ "%+.1f" | format(z.change_1y_pct) }}%</span>{% else %}<strong>Flat</strong>{% endif %} <span class="role">over 1 year, from {{ z.year_ago_value_usd | usd }}</span></div>
+        {% endif %}
+        <div class="small">Average value of mid-priced homes (35th–65th percentile){% if z.region %} · {{ z.region }}{% endif %}</div>
+        <div class="small">Source: {{ z.source }}</div>
+      </td></tr>
+    {% endif %}
+    {% if m %}
+      <tr><th>Census average value</th><td><strong>{{ m.mean_owner_occupied_home_value_usd | usd }}</strong> <span class="role">owner-occupied</span></td></tr>
+      <tr><th>Census median value</th><td><strong>{{ m.median_owner_occupied_home_value_usd | usd }}</strong> <span class="role">owner-occupied</span>
+        <div class="small">{{ m.source }} · {{ m.label or ("ZCTA " ~ m.zcta) }}</div></td></tr>
+    {% endif %}
+    </table>
+    {% if m %}<div class="pad"><p class="note">{{ m.note }} Census figures lag by design: a baseline, not a crystal ball.</p></div>{% endif %}
+  {% else %}
+    <div class="pad">{{ dash() }} <span class="role">No real estate metrics available</span></div>
+  {% endif %}
+  </div>
+
+  {% set env_ = r.environment %}
+  {% macro species_list(items, empty, introduced_names=[]) %}
+    {% if items %}
+    <ul class="plain species">
+    {% for sp in items %}
+      <li>{{ link(sp.common_name or sp.scientific_name, sp.url) }}{% if sp.scientific_name in introduced_names %} <span class="tag">introduced</span>{% endif %}
+        <span class="role">{% if sp.common_name %}<span class="sci">{{ sp.scientific_name }}</span> · {% endif %}{{ "{:,}".format(sp.observations) }} observation{{ "s" if sp.observations != 1 }}</span></li>
+    {% endfor %}
+    </ul>
+    {% else %}{{ empty }}{% endif %}
+  {% endmacro %}
+  <h2 class="section">Environmental{% if env_ %} · {{ env_.area }}{% endif %}</h2>
+  <div class="card">
+  {% if env_ %}
+    {% set introduced_names = env_.introduced_names %}
+    <table>
+      <tr><th>Common plants</th><td>{{ species_list(env_.common_plants, dash(), introduced_names) }}</td></tr>
+      <tr><th>Common trees</th><td>{{ species_list(env_.common_trees, dash(), introduced_names) }}</td></tr>
+      <tr><th>Venomous snakes</th><td>{{ species_list(env_.venomous_snakes, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}</td></tr>
+      <tr><th>Venomous spiders</th><td>{{ species_list(env_.venomous_spiders, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}</td></tr>
+      <tr><th>Problem wildlife</th><td>{{ species_list(env_.problem_wildlife, '<span class="flag good">None observed nearby</span>' | safe, introduced_names) }}
+        <div class="small">Native or not: coyotes, deer, wild hogs, bears, raccoons, skunks, rats and similar animals behind property damage, pet attacks and vehicle collisions.</div></td></tr>
+      <tr><th>Invasive &amp; introduced</th><td>{{ species_list(env_.introduced_species, dash()) }}
+        {% if env_.introduced_reference %}<div class="small">Species iNaturalist lists as introduced (non-native) in {{ env_.introduced_reference }}. Not all are harmful, and not every invasive pest is on the list.</div>{% endif %}</td></tr>
+    </table>
+    <div class="pad"><p class="note">Research-grade {{ env_.source | replace("research-grade ", "") }} within {{ env_.radius_km }} km of the address, ranked by number of observations. That reflects what people notice and photograph, not how abundant a species is; absence from a list doesn't mean absence from the area.</p></div>
+  {% else %}
+    <div class="pad">{{ dash() }} <span class="role">No environmental data available</span></div>
+  {% endif %}
+  </div>
+
+  {% if r.operating_rules %}
+  <h2 class="section">Operating rules</h2>
+  <div class="card">
+    <ul class="bullets">
+    {% for rule in r.operating_rules %}<li>{{ rule }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if r.warnings %}
+  <div class="warn">{% for w in r.warnings %}<div>⚠ {{ w.source }}: {{ w.message }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {% if r.debug_snapshot %}
+  <details>
+    <summary class="role">Debug snapshot</summary>
+    <pre class="mono">{{ r.debug_snapshot | tojson(indent=2) }}</pre>
+  </details>
+  {% endif %}
+
+  <footer>
+    <dl>
+      <dt>Generated</dt><dd>{{ r.generated_at_utc }}</dd>
+      {% for src in r.sources %}<dt>Source</dt><dd>{{ src }}</dd>{% endfor %}
+    </dl>
+    <p>Public information only. A lightweight neighborhood and logistics brief, not legal, medical, insurance, appraisal, or investment advice.</p>
+  </footer>
+</main>
+</body>
+</html>

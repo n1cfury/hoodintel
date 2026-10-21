@@ -49,26 +49,18 @@ OPTIONAL_API_ENDPOINTS = {
     "LOCATIONIQ_SEARCH_BASE_URL": "https://us1.locationiq.com/v1/search",
 }
 
-POI_QUERIES = {
-    "Closest Gas Station": ["[amenity=fuel]"],
-    "Closest Hospital": ["[amenity=hospital]", "[healthcare=hospital]"],
-    "Closest Urgent Care": [
-        '[amenity=clinic][name~"(?i)urgent"]',
-        '[healthcare=clinic][name~"(?i)urgent"]',
-        '[name~"(?i)urgent care"]',
-    ],
-    "Closest Veterinary Clinic": ["[amenity=veterinary]"],
-}
-
+# Public instances, tried in order. overpass.kumi.systems was dropped: it
+# accepts connections but rarely answers. List of instances:
+# https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
 ]
 
 USER_AGENT = "HoodIntel/1.0 (public-osint local tool)"
 DEFAULT_TIMEOUT = 30
 DEFAULT_ACS_YEAR = 2023
-DEFAULT_SEARCH_RADII_METERS = [5000, 10000, 20000]
+DEFAULT_SEARCH_RADII_METERS = [8000, 25000]
 DEFAULT_OUTPUT_BASENAME = "neighborhood_report"
 
 

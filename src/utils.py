@@ -50,7 +50,7 @@ def slugify_address(address: str, max_len: int = 80) -> str:
 
 
 def derive_default_output_path(address: str) -> Path:
-    return Path(f"{slugify_address(address)}.pdf")
+    return Path(f"{slugify_address(address)}.html")
 
 
 def escape_text(text: str) -> str:

@@ -14,6 +14,8 @@ class GeocodeResult:
     city: str | None
     state: str | None
     county: str | None = None
+    source: str = "U.S. Census Geocoder"
+    precision: str | None = None  # set when the match is approximate
 
 
 @dataclass(slots=True)
@@ -29,6 +31,7 @@ class POIResult:
     phone: str | None = None
     website: str | None = None
     raw_tags: dict[str, Any] | None = None
+    detail: str | None = None  # short extra line, e.g. an airport's IATA code and size
 
 
 @dataclass(slots=True)
@@ -38,20 +41,55 @@ class RealEstateMetrics:
     label: str | None
     median_owner_occupied_home_value_usd: int | None
     note: str
+    mean_owner_occupied_home_value_usd: int | None = None
+
+
+@dataclass(slots=True)
+class HomeValueIndex:
+    source: str
+    zip_code: str
+    region: str | None
+    typical_home_value_usd: int
+    as_of: str
+    year_ago_value_usd: int | None = None
+    change_1y_pct: float | None = None
+
+
+@dataclass(slots=True)
+class Elevation:
+    feet: float
+    meters: float
+    source: str
+
+
+@dataclass(slots=True)
+class Species:
+    common_name: str | None
+    scientific_name: str
+    observations: int
+    group: str | None = None  # iNaturalist iconic taxon, e.g. Plantae, Mammalia
+    url: str | None = None
+
+
+@dataclass(slots=True)
+class Environment:
+    area: str
+    radius_km: int
+    source: str
+    common_plants: list[Species] = field(default_factory=list)
+    common_trees: list[Species] = field(default_factory=list)
+    venomous_snakes: list[Species] = field(default_factory=list)
+    venomous_spiders: list[Species] = field(default_factory=list)
+    problem_wildlife: list[Species] = field(default_factory=list)
+    introduced_species: list[Species] = field(default_factory=list)
+    introduced_reference: str | None = None  # state the "introduced" status is relative to
+    introduced_names: list[str] = field(default_factory=list)  # scientific names, for tagging other lists
 
 
 @dataclass(slots=True)
 class LookupWarning:
     source: str
     message: str
-
-
-@dataclass(slots=True)
-class HardeningRecommendation:
-    item: str
-    quantity: str
-    deploy_where: str
-    rationale: str
 
 
 @dataclass(slots=True)
@@ -62,9 +100,11 @@ class ReportData:
     important_landmarks: dict[str, POIResult | None]
     emergency_services: dict[str, POIResult | None]
     real_estate_metrics: RealEstateMetrics | None = None
+    home_value_index: HomeValueIndex | None = None
+    elevation: Elevation | None = None
+    environment: Environment | None = None
     executive_summary: list[str] = field(default_factory=list)
     operating_rules: list[str] = field(default_factory=list)
-    hardening_plan: list[HardeningRecommendation] = field(default_factory=list)
     warnings: list[LookupWarning] = field(default_factory=list)
     debug_snapshot: dict[str, Any] | None = None
 

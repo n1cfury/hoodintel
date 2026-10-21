@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src {{ theme_js_csp }}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<title>Request history — HoodIntel</title>
+<style>
+{% include "style.css" %}
+</style>
+<script>{{ theme_js }}</script>
+</head>
+<body>
+<main class="wide">
+  <div class="toolbar">
+    <a class="btn" href="/">← New report</a>
+    <span class="spacer"></span>
+    {% if enabled and total %}<a class="btn" href="/history.csv">Download CSV</a>{% endif %}
+    <button type="button" id="theme-toggle" hidden>Dark mode</button>
+  </div>
+
+  <h2 class="section">Request history</h2>
+  <div class="card">
+  {% if not enabled %}
+    <div class="pad"><span class="role">Request history is turned off (HOODINTEL_AUDIT=0).</span></div>
+  {% elif not rows %}
+    <div class="pad"><span class="role">No requests yet. Reports generated from this site or the command line will be listed here.</span></div>
+  {% else %}
+    <div class="scroll">
+    <table class="history">
+      <thead>
+        <tr><th>Requested</th><th>Queried address</th><th>Result</th><th>Report generated</th><th>Via</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td class="nowrap">{{ row["requested_at"] | when }}</td>
+          <td>
+            <div>{{ row["queried_address"] }}</div>
+            {% if row["matched_address"] and row["matched_address"] | upper != row["queried_address"] | upper %}<div class="small">Matched: {{ row["matched_address"] }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="flag {{ 'good' if row['outcome'] == 'ok' else 'warnf' if row['outcome'] in ('not_found', 'rejected') else 'bad' }}">{{ labels.get(row["outcome"], row["outcome"]) }}</span>
+            {% if row["detail"] %}<div class="small">{{ row["detail"] }}</div>{% endif %}
+          </td>
+          <td class="nowrap">
+            {% if row["generated_at"] %}{{ row["generated_at"] | when }}{% if row["cached"] %}<div class="small">Cached copy</div>{% endif %}{% else %}<span class="empty">—</span>{% endif %}
+          </td>
+          <td>
+            <div>{{ row["source"] | upper }}{% if row["output_format"] %} · {{ row["output_format"] | upper }}{% if row["download"] %} download{% endif %}{% endif %}</div>
+            <div class="small">{% if row["client"] %}{{ row["client"] }} · {% endif %}{% if row["duration_ms"] is not none %}{{ "{:,.1f}".format(row["duration_ms"] / 1000) }} s{% endif %}</div>
+          </td>
+          <td>
+            {% if row["outcome"] != "rejected" %}
+            <form method="post" action="/report">
+              <input type="hidden" name="address" value="{{ row['queried_address'] }}">
+              <button type="submit">Open</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if pages > 1 %}
+    <div class="links">
+      {% if page > 1 %}<a href="/history?page={{ page - 1 }}">← Newer</a>{% endif %}
+      <span class="role">Page {{ page }} of {{ pages }}</span>
+      {% if page < pages %}<a href="/history?page={{ page + 1 }}">Older →</a>{% endif %}
+    </div>
+    {% endif %}
+  {% endif %}
+  </div>
+  <footer>
+    <p>{{ "{:,}".format(total) }} request{{ "s" if total != 1 }} logged · times in UTC · stored in <span class="mono">{{ db_path }}</span></p>
+    <p>Anyone who can open this site can see this history. Keep it on localhost, or put a shared deployment behind authentication.</p>
+  </footer>
+</main>
+</body>
+</html>
